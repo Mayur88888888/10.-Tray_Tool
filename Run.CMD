@@ -1,0 +1,1 @@
+gcc tray_tool.c -o tray_tool.exe -mwindows -lshlwapi -lcomdlg32 -lole32 -lcomctl32 -static
