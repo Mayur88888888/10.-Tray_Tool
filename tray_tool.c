@@ -45,10 +45,10 @@ void FreeBatFiles() {
     fileCount = 0;
 }
 
-void AddBatchFilesToMenu(HMENU menu, const char *folder) {
+void AddBatchFilesToMenu(HMENU parentMenu, const char *folderPath) {
     WIN32_FIND_DATA findFileData;
     char searchPath[MAX_PATH];
-    snprintf(searchPath, MAX_PATH, "%s\\*", folder);
+    snprintf(searchPath, MAX_PATH, "%s\\*", folderPath);
 
     HANDLE hFind = FindFirstFile(searchPath, &findFileData);
     if (hFind == INVALID_HANDLE_VALUE) return;
@@ -58,21 +58,27 @@ void AddBatchFilesToMenu(HMENU menu, const char *folder) {
             continue;
 
         char fullPath[MAX_PATH];
-        snprintf(fullPath, MAX_PATH, "%s\\%s", folder, findFileData.cFileName);
+        snprintf(fullPath, MAX_PATH, "%s\\%s", folderPath, findFileData.cFileName);
 
         if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            AddBatchFilesToMenu(menu, fullPath);  // Recurse into subfolders
-        } else if (StrStrI(findFileData.cFileName, ".bat") || StrStrI(findFileData.cFileName, ".cmd")) {
-            if (fileCount < MAX_MENU_ITEMS) {
-                batFiles[fileCount] = _strdup(fullPath);
-                AppendMenu(menu, MF_STRING, TRAY_MENU_ID_BASE + fileCount, findFileData.cFileName);
-                fileCount++;
+            HMENU subMenu = CreatePopupMenu();
+            AppendMenu(parentMenu, MF_POPUP, (UINT_PTR)subMenu, findFileData.cFileName);
+            AddBatchFilesToMenu(subMenu, fullPath);  // recurse
+        } else {
+            char *ext = PathFindExtension(findFileData.cFileName);
+            if (_stricmp(ext, ".bat") == 0 || _stricmp(ext, ".cmd") == 0) {
+                if (fileCount < MAX_MENU_ITEMS) {
+                    batFiles[fileCount] = _strdup(fullPath);
+                    AppendMenu(parentMenu, MF_STRING, TRAY_MENU_ID_BASE + fileCount, findFileData.cFileName);
+                    fileCount++;
+                }
             }
         }
     } while (FindNextFile(hFind, &findFileData));
 
     FindClose(hFind);
 }
+
 
 void ShowContextMenu(HWND hwnd) {
     POINT pt;
