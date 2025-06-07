@@ -7,21 +7,22 @@
 #define TRAY_ICON_ID 1001
 #define TRAY_MENU_ID_BASE 2000
 #define MAX_MENU_ITEMS 1000
-#define TOOL_FOLDER "C:\\Tools"  // <-- Change to your folder path
+#define TOOL_FOLDER "C:\\Tools" // Change to your actual folder
 
 NOTIFYICONDATA nid;
 HMENU hTrayMenu;
 char *batFiles[MAX_MENU_ITEMS];
 int fileCount = 0;
+HICON hFolderIcon = NULL;
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
 void AddTrayIcon(HWND hwnd) {
     memset(&nid, 0, sizeof(nid));
-    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.cbSize = sizeof(nid);
     nid.hWnd = hwnd;
     nid.uID = TRAY_ICON_ID;
-    nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
     nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     strcpy(nid.szTip, "Batch Tool Menu");
@@ -32,17 +33,20 @@ void RemoveTrayIcon() {
     Shell_NotifyIcon(NIM_DELETE, &nid);
 }
 
-void ExecuteBatch(const char *filepath) {
-    char command[1024];
-    snprintf(command, sizeof(command), "cmd.exe /c \"%s\"", filepath);
-    ShellExecute(NULL, "open", "cmd.exe", command + 9, NULL, SW_HIDE);
-}
-
 void FreeBatFiles() {
     for (int i = 0; i < fileCount; i++) {
         free(batFiles[i]);
     }
     fileCount = 0;
+}
+
+// Convert HICON to HBITMAP (16x16)
+HBITMAP IconToBitmap(HICON hIcon) {
+    ICONINFO iconInfo;
+    if (GetIconInfo(hIcon, &iconInfo)) {
+        return iconInfo.hbmColor;
+    }
+    return NULL;
 }
 
 void AddBatchFilesToMenu(HMENU parentMenu, const char *folderPath) {
@@ -63,7 +67,13 @@ void AddBatchFilesToMenu(HMENU parentMenu, const char *folderPath) {
         if (findFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             HMENU subMenu = CreatePopupMenu();
             AppendMenu(parentMenu, MF_POPUP, (UINT_PTR)subMenu, findFileData.cFileName);
-            AddBatchFilesToMenu(subMenu, fullPath);  // recurse
+            AddBatchFilesToMenu(subMenu, fullPath); // Recursive call
+
+            // Add folder icon
+            MENUITEMINFO mii = { sizeof(mii) };
+            mii.fMask = MIIM_BITMAP;
+            mii.hbmpItem = IconToBitmap(hFolderIcon);
+            SetMenuItemInfo(parentMenu, GetMenuItemCount(parentMenu) - 1, TRUE, &mii);
         } else {
             char *ext = PathFindExtension(findFileData.cFileName);
             if (_stricmp(ext, ".bat") == 0 || _stricmp(ext, ".cmd") == 0) {
@@ -79,6 +89,11 @@ void AddBatchFilesToMenu(HMENU parentMenu, const char *folderPath) {
     FindClose(hFind);
 }
 
+void ExecuteBatch(const char *filepath) {
+    char command[1024];
+    snprintf(command, sizeof(command), "/c \"%s\"", filepath);
+    ShellExecute(NULL, "open", "cmd.exe", command, NULL, SW_HIDE);
+}
 
 void ShowContextMenu(HWND hwnd) {
     POINT pt;
@@ -95,17 +110,18 @@ void ShowContextMenu(HWND hwnd) {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    const char CLASS_NAME[] = "TrayAppWindow";
+    const char CLASS_NAME[] = "TrayAppWindowClass";
     WNDCLASS wc = { 0 };
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = CLASS_NAME;
     RegisterClass(&wc);
 
-    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "Tray App", 0,
+    HWND hwnd = CreateWindowEx(0, CLASS_NAME, "TrayApp", 0,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         NULL, NULL, hInstance, NULL);
 
+    hFolderIcon = ExtractIcon(NULL, "shell32.dll", 4); // Index 4 = folder icon
     AddTrayIcon(hwnd);
 
     MSG msg;
@@ -120,10 +136,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_TRAYICON) {
-        if (lParam == WM_RBUTTONUP) {
-            ShowContextMenu(hwnd);
-        }
+    if (msg == WM_TRAYICON && lParam == WM_RBUTTONUP) {
+        ShowContextMenu(hwnd);
     } else if (msg == WM_COMMAND) {
         int id = LOWORD(wParam);
         if (id >= TRAY_MENU_ID_BASE && id < TRAY_MENU_ID_BASE + fileCount) {
